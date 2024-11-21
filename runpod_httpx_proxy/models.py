@@ -1,29 +1,35 @@
 import typing
 from urllib.parse import urljoin
 import httpx
-from dataclasses import dataclass, asdict
 import re
 
+from runpod_httpx_proxy.types import JSON, JSONObject
 
-class RequestDict(typing.TypedDict):
+try:
+    from typing import TypedDict
+except ImportError:
+    from typing_extensions import TypedDict
+
+
+class RequestDict(TypedDict):
     method: str
     url: str
     headers: dict[str, str]
     content: typing.Optional[typing.Any]
 
-    @classmethod
-    def from_request(
-        cls, request: httpx.Request, **overrides: typing.Unpack["RequestDict"]
-    ) -> "RequestDict":
-        input = cls(
-            method=overrides.pop("method", request.method),
-            url=overrides.pop("url", str(request.url)),
-            headers=overrides.pop("headers", {**request.headers}),
-        )
-        content = overrides.pop("content", request.content)
-        if content is not None:
-            input["content"] = content
-        return input
+
+def request_dict_from_request(
+    request: httpx.Request, /, **kwargs: typing.Unpack[RequestDict]
+) -> RequestDict:
+    input = RequestDict(
+        method=kwargs.pop("method", request.method),
+        url=kwargs.pop("url", str(request.url)),
+        headers=kwargs.pop("headers", {**request.headers}),
+    )
+    content = overrides.pop("content", request.content)
+    if content is not None:
+        input["content"] = content
+    return input
 
 
 class ResponseDict(typing.TypedDict):
@@ -32,15 +38,15 @@ class ResponseDict(typing.TypedDict):
     content: typing.Optional[typing.Any]
     request: RequestDict
 
-    @classmethod
-    def from_request(
-        cls, response: httpx.Response, **overrides: typing.Unpack["ResponseDict"]
-    ) -> "ResponseDict":
-        return cls(
-            status_code=overrides.pop("status_code", response.status_code),
-            headers={**overrides.pop("headers", response.headers)},
-            content=overrides.pop("content", response.content),
-        )
+
+def response_dict_from_response(
+    response: httpx.Response, /, **overrides: typing.Unpack[ResponseDict]
+) -> ResponseDict:
+    return ResponseDict(
+        status_code=overrides.pop("status_code", response.status_code),
+        headers={**overrides.pop("headers", response.headers)},
+        content=overrides.pop("content", response.content),
+    )
 
 
 class Job(typing.TypedDict):
@@ -54,7 +60,6 @@ class Job(typing.TypedDict):
 
 
 class WorkerRequest(httpx.Request):
-
     @classmethod
     def from_dict(cls, dict: RequestDict) -> "WorkerRequest":
         return cls(
@@ -116,7 +121,6 @@ class StreamResponseDict(typing.TypedDict):
 
 
 class StreamResponse(httpx.Response):
-
     # @classmethod
     # def from_response(
     #     cls, response: httpx.Response, **override: typing.Unpack["ResponseDict"]
@@ -146,7 +150,6 @@ RUNPOD_ENDPOINT_PATTERN = re.compile(
 
 
 class RunRequest(httpx.Request):
-
     @classmethod
     def from_request(
         cls, request: httpx.Request, **override: typing.Unpack["RequestDict"]
