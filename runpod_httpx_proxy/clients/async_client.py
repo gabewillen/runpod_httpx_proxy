@@ -1,19 +1,15 @@
-import json
 import httpx
 import typing
 from urllib.parse import urljoin
 from runpod_httpx_proxy.models import (
-    Job,
     StreamResponse,
     RunRequest,
-    StreamResponseDict,
 )
 
 P = typing.ParamSpec("P")
 
 
 class AsyncClient(httpx.AsyncClient):
-
     def build_stream_request(self, job_id: str) -> httpx.Response:
         return httpx.Request(
             method="POST",

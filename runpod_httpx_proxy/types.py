@@ -17,29 +17,21 @@ except ImportError:
     # For Python 3.7 and older versions
     from typing_extensions import TypedDict
 
-
-JSONPrimitive = typing.Union[str, int, float, bool, None]
-JSONArray = typing.Annotated[
-    typing.List[typing.Union[JSONPrimitive, "JSONArray", "JSONObject"]], "JSON Array"
-]
-
-
-JSONObject = typing.Annotated[
-    typing.Dict[
-        str,
-        typing.Union[
-            JSONPrimitive,
-            JSONArray,
-            typing.Dict[str, typing.Union[JSONPrimitive, JSONArray]],
-        ],
-    ],
-    "JSON Object",
-]
 JSON = typing.Annotated[
-    typing.Union[JSONPrimitive, JSONArray, JSONObject],
+    typing.Union[str, int, float, bool, None, typing.List["JSON"], dict[str, "JSON"]],
     "JSON",
 ]
 JobInput = typing.TypeVar("JobInput")
+
+JobOutput = typing.Annotated[
+    typing.Union[
+        JSON,
+        typing.Generator[JSON, None, None],
+        typing.AsyncGenerator[JSON, None],
+        typing.Coroutine[None, None, JSON],
+    ],
+    "Job Output",
+]
 
 
 # job type add any job related info here alternatively you can extend this type for custom job types. This is purely for type hinting and to improve developer experience.
@@ -48,30 +40,10 @@ class JobDict(typing.Generic[JobInput], TypedDict):
     input: typing.Annotated[JobInput, "the input for the job"]
 
 
-# handler types
-SyncFunctionHandler = typing.Annotated[
-    typing.Callable[[JobDict[typing.Any]], JSON],
-    "Synchronous handler function that returns an Iterable",
-]
-AsyncFunctionHandler = typing.Annotated[
-    typing.Callable[[JobDict[typing.Any]], typing.Generator[JSON, None, None]],
-    "Asynchronous handler function that returns an AsyncIterable",
-]
-GeneratorFunctionHandler = typing.Annotated[
-    typing.Callable[[JobDict[typing.Any]], typing.Generator[JSON, None, None]],
-    "Generator handler function that yields Iterables",
-]
-AsyncGeneratorFunctionHandler = typing.Annotated[
-    typing.Callable[[JobDict[typing.Any]], typing.AsyncGenerator[JSON, None]],
-    "Async generator handler function that yields JSON",
-]
-
 Handler = typing.Annotated[
-    typing.Union[
-        JSON,
-        typing.Generator[JSON, None, None],
-        typing.AsyncGenerator[JSON, None],
-        typing.Coroutine[None, None, JSON],
+    typing.Callable[
+        [JobDict[JobInput]],
+        JobOutput,
     ],
     "Handler function",
 ]
@@ -89,22 +61,18 @@ class RunpodArgsDict(TypedDict):
     test_input: typing.Annotated[typing.Optional[str], "Test input for the worker"]
 
 
-class StartConfigDict(TypedDict):
-    handler: Handler
+class StartConfigDict(typing.Generic[JobInput], TypedDict):
+    handler: Handler[JobInput]
     return_aggregate_stream: typing.Annotated[
-        typing.Optional[bool], "Flag to return aggregate stream"
+        typing.NotRequired[typing.Optional[bool]], "Flag to return aggregate stream"
     ]
     concurrency_modifier: typing.Annotated[
-        typing.Optional[typing.Callable[[int], int]],
+        typing.NotRequired[typing.Callable[[int], int]],
         "Function to modify concurrency",
     ]
-    rp_args: typing.Annotated[
-        typing.Optional[RunpodArgsDict],
-        "RunPod specific arguments",
-    ]
 
 
-class WorkerConfigDict(StartConfigDict):
+class WorkerConfigDict(StartConfigDict[JobInput]):
     reference_counter_start: typing.Annotated[
         typing.Optional[float], "Start time of the worker"
     ]
@@ -201,3 +169,29 @@ class JobOutputDict(TypedDict):
 
 class JobErrorDict(TypedDict):
     error: typing.Annotated[JSON, "Error from the job"]
+
+
+class PolicyDict(TypedDict):
+    executionTimeout: typing.Annotated[typing.NotRequired[int], "Timeout for the job"]
+    lowPriority: typing.Annotated[
+        typing.NotRequired[bool], "Flag to run the job as low priority"
+    ]
+    ttl: typing.Annotated[typing.NotRequired[int], "Number of retries for the job"]
+
+
+class S3ConfigDict(TypedDict):
+    accessId: typing.Annotated[str, "Access ID"]
+    accessSecret: typing.Annotated[str, "Access Secret"]
+    bucketName: typing.Annotated[str, "Bucket Name"]
+    endpointUrl: typing.Annotated[str, "Endpoint URL"]
+
+
+class RunRequestDict(typing.Generic[JobInput], TypedDict):
+    input: typing.Annotated[JobInput, "Input for the job"]
+    policy: typing.Annotated[typing.NotRequired[PolicyDict], "Policy for the job"]
+    webhook: typing.Annotated[
+        typing.NotRequired[typing.Optional[str]], "Webhook URL for the job"
+    ]
+    s3Config: typing.Annotated[
+        typing.NotRequired[typing.Optional[S3ConfigDict]], "S3 config for the job"
+    ]

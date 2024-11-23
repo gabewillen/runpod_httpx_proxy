@@ -3,7 +3,6 @@ from urllib.parse import urljoin
 import httpx
 import re
 
-from runpod_httpx_proxy.types import JSON, JSONObject
 
 try:
     from typing import TypedDict
@@ -15,101 +14,92 @@ class RequestDict(TypedDict):
     method: str
     url: str
     headers: dict[str, str]
-    content: typing.Optional[typing.Any]
+    content: typing.NotRequired[typing.Any]
+
+
+class PartialRequestDict(typing.TypedDict, total=False):
+    method: str
+    url: str
+    headers: dict[str, str]
+    content: typing.NotRequired[typing.Any]
 
 
 def request_dict_from_request(
-    request: httpx.Request, /, **kwargs: typing.Unpack[RequestDict]
+    request: httpx.Request,
+    /,
+    **request_dict_overrides: typing.Unpack[PartialRequestDict],
 ) -> RequestDict:
-    input = RequestDict(
-        method=kwargs.pop("method", request.method),
-        url=kwargs.pop("url", str(request.url)),
-        headers=kwargs.pop("headers", {**request.headers}),
-    )
-    content = overrides.pop("content", request.content)
-    if content is not None:
-        input["content"] = content
-    return input
+    request_dict_overrides.setdefault("method", request.method)
+    request_dict_overrides.setdefault("url", str(request.url))
+    request_dict_overrides.setdefault("headers", dict(request.headers))
+    if "content" not in request_dict_overrides:
+        request_dict_overrides["content"] = (
+            request.content.decode() if request.content else None
+        )
+    return RequestDict(**request_dict_overrides)
 
 
 class ResponseDict(typing.TypedDict):
     status_code: int
     headers: dict[str, str]
-    content: typing.Optional[typing.Any]
+    content: typing.NotRequired[typing.Any]
+    request: RequestDict
+
+
+class PartialResponseDict(typing.TypedDict, total=False):
+    status_code: int
+    headers: dict[str, str]
+    content: typing.NotRequired[typing.Any]
     request: RequestDict
 
 
 def response_dict_from_response(
-    response: httpx.Response, /, **overrides: typing.Unpack[ResponseDict]
+    response: httpx.Response,
+    /,
+    **response_dict_overrides: typing.Unpack[PartialResponseDict],
 ) -> ResponseDict:
-    return ResponseDict(
-        status_code=overrides.pop("status_code", response.status_code),
-        headers={**overrides.pop("headers", response.headers)},
-        content=overrides.pop("content", response.content),
+    response_dict_overrides.setdefault(
+        "request", request_dict_from_request(response.request)
+    )
+    response_dict_overrides.setdefault("status_code", response.status_code)
+    response_dict_overrides.setdefault("headers", dict(response.headers))
+    if "content" not in response_dict_overrides:
+        response_dict_overrides["content"] = response.content
+    return ResponseDict(**response_dict_overrides)
+
+
+class JobDict(typing.TypedDict):
+    id: typing.NotRequired[str]
+    input: RequestDict
+
+
+def job_dict_from_request(
+    request: httpx.Request, **overrides: typing.Unpack[RequestDict]
+) -> JobDict:
+    return JobDict(input=request_dict_from_request(request, **overrides))
+
+
+def request_from_request_dict(request_dict: RequestDict) -> httpx.Request:
+    return httpx.Request(
+        method=request_dict["method"],
+        url=request_dict["url"],
+        headers=request_dict.get("headers", {}),
+        content=request_dict.get("content", None),
     )
 
 
-class Job(typing.TypedDict):
-    input: RequestDict
-
-    @classmethod
-    def from_request(
-        cls, request: httpx.Request, **overrides: typing.Unpack[RequestDict]
-    ) -> "Job":
-        return cls(input=RequestDict.from_request(request, **overrides))
-
-
-class WorkerRequest(httpx.Request):
-    @classmethod
-    def from_dict(cls, dict: RequestDict) -> "WorkerRequest":
-        return cls(
-            method=dict["method"],
-            url=dict["url"],
-            headers=dict.get("headers", {}),
-            content=dict.get("content", None),
-        )
-
-    @classmethod
-    def from_request(
-        cls, request: httpx.Request, **overrides: typing.Unpack["RequestDict"]
-    ) -> "WorkerRequest":
-        return cls(
-            method=overrides.pop("method", request.method),
-            url=overrides.pop("url", str(request.url)),
-            headers=overrides.pop("headers", request.headers),
-            content=overrides.pop("content", request.content),
-        )
-
-    def to_dict(self) -> RequestDict:
-        return RequestDict.from_request(self)
+def response_from_response_dict(response_dict: ResponseDict) -> httpx.Response:
+    return httpx.Response(
+        status_code=response_dict["status_code"],
+        headers=response_dict.get("headers", {}),
+        content=response_dict.get("content", None),
+    )
 
 
 STREAMABLE_CONTENT_TYPES = ["text/event-stream", "multipart/"]
 STREAMING_CONNECTIONS = ["keep-alive"]
 STREAMING_TRANSFER_ENCODINGS = ["chunked"]
 STREAMING_CONTENT_LENGTHS = [None, "0"]
-
-
-def is_streaming(self) -> bool:
-    content_type = self.headers.get("content-type", "").lower()
-    return (
-        # Check for streamable content types
-        any(
-            streamable_content_type in content_type
-            for streamable_content_type in STREAMABLE_CONTENT_TYPES
-        )
-        # Check for connection header indicating a persistent connection
-        or self.headers.get("connection", "").lower() in STREAMING_CONNECTIONS
-        # If content length is not specified or is zero, assume it could be streaming
-        or self.headers.get("content-length") in STREAMING_CONTENT_LENGTHS
-        # Check for chunked transfer encoding
-        or self.headers.get("transfer-encoding", "").lower()
-        in STREAMING_TRANSFER_ENCODINGS
-        # Check for file download indicator, common in streamed downloads
-        or "attachment" in self.headers.get("content-disposition", "").lower()
-        # Check for range requests, which may indicate partial, streamable content
-        or self.headers.get("accept-ranges", "").lower() == "bytes"
-    )
 
 
 StreamStatus = typing.Literal["IN_PROGRESS", "COMPLETED"]
@@ -121,26 +111,16 @@ class StreamResponseDict(typing.TypedDict):
 
 
 class StreamResponse(httpx.Response):
-    # @classmethod
-    # def from_response(
-    #     cls, response: httpx.Response, **override: typing.Unpack["ResponseDict"]
-    # ) -> "WorkerResponse":
-    #     return cls(
-    #         status_code=override.pop("status_code", response.status_code),
-    #         headers=override.pop("headers", response.headers),
-    #         content=override.pop("content", response.content),
-    #         request=override.pop("request", response.request),
-    #     )
-
     @classmethod
-    def from_dict(
-        cls, dict: ResponseDict, **overrides: typing.Unpack["ResponseDict"]
+    def from_response_dict(
+        cls,
+        response_dict: ResponseDict,
     ) -> "StreamResponse":
         return cls(
-            status_code=overrides.pop("status_code", dict["status_code"]),
-            headers=overrides.pop("headers", dict["headers"]),
-            content=overrides.pop("content", dict["content"]),
-            request=overrides.pop("request", dict["request"]),
+            status_code=response_dict["status_code"],
+            headers=response_dict.get("headers", {}),
+            content=response_dict.get("content", None),
+            request=request_from_request_dict(response_dict.get("request")),
         )
 
 
@@ -152,7 +132,7 @@ RUNPOD_ENDPOINT_PATTERN = re.compile(
 class RunRequest(httpx.Request):
     @classmethod
     def from_request(
-        cls, request: httpx.Request, **override: typing.Unpack["RequestDict"]
+        cls, request: httpx.Request, **override: typing.Unpack[PartialRequestDict]
     ) -> "RunRequest":
         url = httpx.URL(override.pop("url", str(request.url)))
         base_url = f"{url.scheme}://{url.host}"
@@ -167,7 +147,7 @@ class RunRequest(httpx.Request):
             url=urljoin(base_url, "/run"),
             headers=override.get("headers", {}),
             json={
-                "input": RequestDict.from_request(
+                "input": request_dict_from_request(
                     request, url=urljoin(base_url, path), content=content
                 ),
             },

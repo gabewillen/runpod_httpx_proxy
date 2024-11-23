@@ -1,18 +1,41 @@
-import asyncio
-from fastapi import FastAPI
-from fastapi.responses import StreamingResponse
-import json
-import runpod
-import runpod_httpx_proxy
-from sse_starlette.sse import EventSourceResponse
-from runpod.serverless.modules.rp_fastapi import WorkerAPI
+from starlette.applications import Starlette
+from starlette.routing import Route
+from starlette.responses import JSONResponse
 
 
-app = FastAPI()
+async def runsync():
+    return JSONResponse({"message": "Hello, World!"})
 
-MESSAGE = json.dumps({"message": "Hello, World!"})
+
+async def run():
+    return JSONResponse({"message": "Hello, World!"})
 
 
+async def stream(job_id: str):
+    return JSONResponse({"message": f"Hello, World! {job_id}"})
+
+
+core = Starlette(
+    routes=[
+        Route("/runsync", runsync),
+        Route("/run", run),
+        Route("/stream/{job_id:str}", stream),
+    ]
+)
+
+
+class Worker(Starlette):
+    def __init__(self):
+        super().__init__(
+            routes=[
+                Route("/runsync", runsync),
+                Route("/run", run),
+                Route("/stream/{job_id:str}", stream),
+            ]
+        )
+
+    def runsync(self):
+        
 @app.get("/stream")
 async def stream():
     async def streamer():

@@ -1,7 +1,7 @@
-from typing import Unpack
 import httpx
+import types
 
-from runpod_httpx_proxy.models import RequestDict, ResponseDict
+from runpod_httpx_proxy.types import Handler, JobInput
 
 
 def is_content_type_event_stream(response: httpx.Response) -> bool:
@@ -40,27 +40,5 @@ def is_streaming_response(response: httpx.Response) -> bool:
     )
 
 
-def serialize_request(
-    request: httpx.Request, **kwargs: Unpack[RequestDict]
-) -> RequestDict:
-    return {
-        "method": request.method,
-        "url": request.url,
-        "headers": request.headers,
-        "content": request.content,
-    }
-
-
-def serialize_response(
-    response: httpx.Response, **kwargs: Unpack[ResponseDict]
-) -> ResponseDict:
-    serialized = {
-        "status_code": response.status_code,
-        "headers": response.headers,
-        "url": response.url,
-        "request": serialize_request(response.request),
-        **kwargs,
-    }
-    if not is_streaming_response(response):
-        serialized["content"] = response.content.decode()
-    return serialized
+def is_generator(handler: Handler[JobInput]) -> bool:
+    return isinstance(handler, (types.GeneratorType, types.AsyncGeneratorType))
