@@ -1,1 +1,1 @@
-from .async_handler import AsyncHandler
+from .async_handler import async_handler

@@ -10,7 +10,7 @@ from runpod_httpx_proxy.models import (
     response_dict_from_response,
 )
 from runpod_httpx_proxy.conditions import is_streaming_response
-from runpod_httpx_proxy.types import JobDict, JobInput, Handler
+from runpod_httpx_proxy.types import JobDict
 
 
 def async_handler(app: _ASGIApp):
@@ -33,13 +33,13 @@ def async_handler(app: _ASGIApp):
         stream = is_streaming_response(response)
         # yield the response collecting the content if we aren't streaming
         yield response_dict_from_response(
-            response, content=(await response.aread()) if not stream else None
+            response, content=(await response.aread()).decode() if not stream else None
         )
         # if we are streaming yield the data from the stream
         if stream:
             async for data in response.aiter_text():
                 yield data
-        # close the response
+            # close the response
         await response.aclose()
 
     return handle

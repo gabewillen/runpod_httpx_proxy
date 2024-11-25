@@ -115,17 +115,18 @@ class StreamResponse(httpx.Response):
     def from_response_dict(
         cls,
         response_dict: ResponseDict,
+        **kwargs: dict[str, typing.Any],
     ) -> "StreamResponse":
         return cls(
             status_code=response_dict["status_code"],
             headers=response_dict.get("headers", {}),
-            content=response_dict.get("content", None),
+            content=kwargs.get("content", response_dict.get("content", None)),
             request=request_from_request_dict(response_dict.get("request")),
         )
 
 
 RUNPOD_ENDPOINT_PATTERN = re.compile(
-    r"/?(?P<version>v\d+)/(?P<endpoint_id>\d+)(?P<path>/.*?)/?$"
+    r"/?(?P<version>v\d+)/(?P<endpoint_id>[a-zA-Z0-9]+)(?P<path>/.*?)/?$"
 )
 
 
@@ -134,18 +135,20 @@ class RunRequest(httpx.Request):
     def from_request(
         cls, request: httpx.Request, **override: typing.Unpack[PartialRequestDict]
     ) -> "RunRequest":
+        print("RUN REQUEST", request.url, request.headers)
         url = httpx.URL(override.pop("url", str(request.url)))
-        base_url = f"{url.scheme}://{url.host}"
         match = RUNPOD_ENDPOINT_PATTERN.match(request.url.path)
         if match is not None:
-            _, _, path = match.groups()
+            version, endpoint_id, path = match.groups()
+            base_url = f"{url.scheme}://{url.host}/{version}/{endpoint_id}"
         else:
+            base_url = ""
             path = request.url.path
         content = request.content.decode() if request.content else None
         return cls(
             method="POST",
-            url=urljoin(base_url, "/run"),
-            headers=override.get("headers", {}),
+            url=f"{base_url}/run",
+            headers=override.get("headers", request.headers),
             json={
                 "input": request_dict_from_request(
                     request, url=urljoin(base_url, path), content=content

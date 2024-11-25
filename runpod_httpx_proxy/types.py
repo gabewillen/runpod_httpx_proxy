@@ -9,6 +9,7 @@ Note: These types are intentionally verbose and explicit to make them understanb
 """
 
 import typing
+import enum
 
 try:
     # For Python 3.8 and newer versions
@@ -23,12 +24,24 @@ JSON = typing.Annotated[
 ]
 JobInput = typing.TypeVar("JobInput")
 
+
+CoroutineJobOutput = typing.Annotated[
+    typing.Coroutine[None, None, JSON], "Coroutine Job Output"
+]
+AsyncGeneratorOutput = typing.Annotated[
+    typing.AsyncGenerator[JSON, None], "Async Generator Job Output"
+]
+GeneratorOutput = typing.Annotated[
+    typing.Generator[JSON, None, None], "Generator Job Output"
+]
+SyncFunctionOutput = typing.Annotated[JSON, "Sync Function Job Output"]
+
 JobOutput = typing.Annotated[
     typing.Union[
-        JSON,
-        typing.Generator[JSON, None, None],
-        typing.AsyncGenerator[JSON, None],
-        typing.Coroutine[None, None, JSON],
+        SyncFunctionOutput,
+        GeneratorOutput,
+        AsyncGeneratorOutput,
+        CoroutineJobOutput,
     ],
     "Job Output",
 ]
@@ -47,6 +60,8 @@ Handler = typing.Annotated[
     ],
     "Handler function",
 ]
+
+ConcurrencyModifier = typing.Callable[[int], int]
 
 
 class RunpodArgsDict(TypedDict):
@@ -88,6 +103,13 @@ class Singleton:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return typing.cast(typing.Self, cls._instance)
+
+
+class JobType(int, enum.Enum):
+    SYNC_FUNCTION = 0
+    ASYNC_FUNCTION = 1
+    SYNC_GENERATOR = 2
+    ASYNC_GENERATOR = 3
 
 
 Status = typing.Annotated[
