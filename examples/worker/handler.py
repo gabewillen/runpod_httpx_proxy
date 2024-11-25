@@ -1,9 +1,11 @@
-from fastapi.responses import JSONResponse
 from httpx import Request
 from runpod_httpx_proxy.handlers.async_handler import async_handler
 import runpod
+import asyncio
 from starlette.applications import Starlette
+from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
+import json
 
 
 async def get_json(request: Request):
@@ -11,8 +13,12 @@ async def get_json(request: Request):
 
 
 async def get_stream(request: Request):
-    for i in range(10):
-        yield {"data": i}
+    async def stream():
+        for i in range(10):
+            yield f"{json.dumps({'data': i})}\n"
+            await asyncio.sleep(1)
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 app = Starlette(
@@ -23,4 +29,6 @@ app = Starlette(
 )
 
 if __name__ == "__main__":
-    runpod.serverless.start({"handler": async_handler(app)})
+    runpod.serverless.start(
+        {"handler": async_handler(app), "return_aggregate_stream": True}
+    )

@@ -7,21 +7,14 @@ from runpod_httpx_proxy.models import (
     StreamResponse,
     RunRequest,
 )
+import asyncio
+
+from runpod_httpx_proxy.types import JSON
 
 P = typing.ParamSpec("P")
 
 
 class AsyncClient(httpx.AsyncClient):
-    def build_stream_request(self, job_id: str) -> httpx.Request:
-        print("BUILD STREAM REQUEST", job_id, self.base_url)
-        return self.build_request(
-            method="POST",
-            url=f"stream/{job_id}",
-        )
-
-    async def send_stream_request(self, request: httpx.Request) -> httpx.Response:
-        return await super().send(request)
-
     async def send_run_request(
         self,
         request: RunRequest,
@@ -33,7 +26,6 @@ class AsyncClient(httpx.AsyncClient):
 
         run_response = await super().send(
             request,
-            stream=stream,
             *args,
             **kwargs,
         )
@@ -41,39 +33,51 @@ class AsyncClient(httpx.AsyncClient):
         if run_response.status_code != 200:
             return run_response
         job = run_response.json()
-        # send a request to the stream endpoint even if the client is not streaming
-        stream_request = self.build_stream_request(job["id"])
-        print("STREAM REQUEST", stream_request)
-        stream_response = await self.send_stream_request(stream_request)
-        print("STREAM RESPONSE", stream_response)
-        # if the stream endpoint returns an error, return the error
+        stream_request = self.build_request(method="POST", url=f"stream/{job['id']}")
+
+        async def wait_for_output() -> (
+            typing.Tuple[httpx.Response, dict[str, typing.Any]]
+        ):
+            stream_response = await super(AsyncClient, self).send(stream_request)
+            while stream_response.status_code == 200:
+                stream_response_content = stream_response.json()
+                if stream_response_content.get("status") == "IN_QUEUE":
+                    stream_response = await super(AsyncClient, self).send(
+                        stream_request
+                    )
+                    continue
+                print("STREAM RESPONSE CONTENT", stream_response_content)
+                output = [
+                    item["output"] for item in stream_response_content.pop("stream")
+                ]
+                return stream_response, {**stream_response_content, "output": output}
+            return stream_response, {"output": [None]}
+
+        stream_response, stream_response_content = await wait_for_output()
+
         if stream_response.status_code != 200:
             return stream_response
-
-        stream_response_content = stream_response.json()
-        print("STREAM RESPONSE CONTENT", stream_response_content)
-        stream_response_dict = stream_response_content.get("stream", [{}])[0].get(
-            "output"
-        )
-        print("STREAM RESPONSE DICT", stream_response_dict)
-        if stream_response_content.get(
-            "status"
-        ) == "COMPLETED" or not is_streaming_response(stream_response_dict):
+        stream_response_dict = stream_response_content["output"].pop(0)
+        if stream_response_dict is None:
+            raise Exception("No output in stream response")
+        stream_response_is_streaming = is_streaming_response(stream_response_dict)
+        # send a request to the stream endpoint even if the client is not streaming
+        if not stream_response_is_streaming:
             return StreamResponse.from_response_dict(stream_response_dict)
 
-        async def stream():
-            next_response = await self.send_stream_request(stream_request)
-            print("NEXT RESPONSE", next_response)
-            if next_response.status_code != 200:
-                raise Exception(next_response.text)
-            next_response_content = next_response.json()
-            print("NEXT RESPONSE CONTENT", next_response_content)
-            if next_response_content.get("status") != "COMPLETED":
-                yield next_response_content
+        async def stream_output(stream_response_content: dict[str, typing.Any]):
+            while stream_response_content["status"] == "IN_PROGRESS":
+                for output in stream_response_content["output"]:
+                    print("OUTPUT", output)
+                    yield output
+                stream_response, stream_response_content = await wait_for_output()
+                if stream_response.status_code != 200:
+                    raise Exception(stream_response.text)
 
+        print("STREAMING", stream_response_dict["status_code"])
         return httpx.Response(
             status_code=stream_response_dict["status_code"],
-            content=stream(),
+            content=stream_output(stream_response_content),
         )
 
     async def send(

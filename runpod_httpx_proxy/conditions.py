@@ -10,6 +10,11 @@ def is_content_type_event_stream(headers: dict[str, str]) -> bool:
     return "text/event-stream" in content_type
 
 
+def is_content_type_ndjson(headers: dict[str, str]) -> bool:
+    content_type = headers.get("content-type", "").lower()
+    return "application/x-ndjson" in content_type
+
+
 def is_connection_keep_alive(headers: dict[str, str]) -> bool:
     connection = headers.get("connection", "").lower()
     return "keep-alive" in connection
@@ -39,6 +44,7 @@ def is_streaming_response(response: httpx.Response | ResponseDict) -> bool:
         is_content_type_event_stream(headers)
         or is_chunked_transfer_encoding(headers)
         or is_content_type_multipart(headers)
+        or is_content_type_ndjson(headers)
         or (
             is_connection_keep_alive(headers) and not is_content_length_missing(headers)
         )

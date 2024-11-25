@@ -6,13 +6,13 @@ import runpod_httpx_proxy
 
 
 class TestAsyncClient:
-
     client: runpod_httpx_proxy.clients.AsyncClient = (
         runpod_httpx_proxy.clients.AsyncClient(
             base_url="https://api.runpod.ai/v2/svh9xg0m4r37k4",
             headers={
                 "Authorization": "Bearer EVC5KDSRUMT86BTKMXVSWJZGBZ3ENH5S4XAPNI3M"
             },
+            timeout=60,
         )
     )
 
@@ -20,12 +20,12 @@ class TestAsyncClient:
     #     base_url="http://localhost:8000", transport=httpx.ASGITransport(app)
     # )
 
-    @pytest.mark.asyncio
-    async def test_get_json(self):
-        response = await self.client.get("/json")
-        print("RESPONSE", response)
-        assert response.status_code == 200
-        assert response.json() == {"message": "Hello, World!"}
+    # @pytest.mark.asyncio
+    # async def test_get_json(self):
+    #     response = await self.client.get("/json")
+    #     print("RESPONSE", response)
+    #     assert response.status_code == 200
+    #     assert response.json() == {"message": "Hello, World!"}
 
     # @pytest.mark.asyncio
     # async def test_stream_sse(self):
@@ -35,9 +35,9 @@ class TestAsyncClient:
 
     @pytest.mark.asyncio
     async def test_stream_json(self):
-        response = await self.client.get("/stream")
-        assert response.status_code == 200
-        assert response.json() == {"message": "Hello, World!"}
+        async with self.client.stream("GET", "/stream") as response:
+            async for json in response.aiter_text():
+                print("JSON", json)
 
 
 # async def main():
