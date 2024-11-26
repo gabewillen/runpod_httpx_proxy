@@ -1,4 +1,4 @@
-from runpod_httpx_proxy.conditions import is_generator, is_coroutine
+from runpod_httpx_proxy.utils import is_generator, is_coroutine
 from uuid_extensions import uuid7str  # type: ignore
 from runpod_httpx_proxy.types import (
     JSON,

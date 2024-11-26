@@ -79,12 +79,14 @@ def job_dict_from_request(
     return JobDict(input=request_dict_from_request(request, **overrides))
 
 
-def request_from_request_dict(request_dict: RequestDict) -> httpx.Request:
+def request_from_request_dict(
+    request_dict: RequestDict, **overrides: typing.Unpack[PartialRequestDict]
+) -> httpx.Request:
     return httpx.Request(
-        method=request_dict["method"],
-        url=request_dict["url"],
-        headers=request_dict.get("headers", {}),
-        content=request_dict.get("content", None),
+        method=overrides.get("method", request_dict["method"]),
+        url=overrides.get("url", request_dict["url"]),
+        headers=overrides.get("headers", request_dict.get("headers", {})),
+        content=overrides.get("content", request_dict.get("content", None)),
     )
 
 
@@ -115,13 +117,15 @@ class StreamResponse(httpx.Response):
     def from_response_dict(
         cls,
         response_dict: ResponseDict,
-        **kwargs: dict[str, typing.Any],
+        **overrides: typing.Unpack[PartialResponseDict],
     ) -> "StreamResponse":
         return cls(
             status_code=response_dict["status_code"],
-            headers=response_dict.get("headers", {}),
-            content=kwargs.get("content", response_dict.get("content", None)),
-            request=request_from_request_dict(response_dict.get("request")),
+            headers=overrides.get("headers", response_dict.get("headers", {})),
+            content=overrides.get("content", response_dict.get("content", None)),
+            request=request_from_request_dict(
+                response_dict.get("request"), **overrides
+            ),
         )
 
 
@@ -135,7 +139,6 @@ class RunRequest(httpx.Request):
     def from_request(
         cls, request: httpx.Request, **override: typing.Unpack[PartialRequestDict]
     ) -> "RunRequest":
-        print("RUN REQUEST", request.url, request.headers)
         url = httpx.URL(override.pop("url", str(request.url)))
         match = RUNPOD_ENDPOINT_PATTERN.match(request.url.path)
         if match is not None:
